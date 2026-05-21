@@ -35,10 +35,11 @@ public class BoardGridManager : MonoBehaviour
     [SerializeField] private TextMeshProUGUI movesText;
     [SerializeField] private GameObject gameOverPanel;
 
-    [Header("--- Audio Settings (타격감) ---")]
-    [SerializeField] private AudioSource audioSource; // 2번에서 추가할 오디오 소스 컴포넌트
-    [SerializeField] private AudioClip matchSound;    // 외부에서 바꿀 수 있는 효과음 파일
-    [SerializeField] private float pitchIncrease = 0.1f; // 콤보마다 증가할 음정 높이
+    [Header("--- Audio Settings (블록별 타격감) ---")]
+    [SerializeField] private AudioSource audioSource;
+    // 기존 단일 Clip에서 각 블록 종류별 사운드를 담는 배열로 변경
+    [SerializeField] private AudioClip[] blockMatchSounds; 
+    [SerializeField] private float pitchIncrease = 0.1f; 
 
     private BlockData[,] grid;
     private BlockData firstSelectedBlock; 
@@ -47,8 +48,6 @@ public class BoardGridManager : MonoBehaviour
     private int currentMoves;
     private int currentScore = 0;
     private bool isGameOver = false;
-
-    // 현재 연쇄 폭발 횟수를 기억하는 변수
     private int comboCount = 1;
 
     private void Awake()
@@ -161,7 +160,6 @@ public class BoardGridManager : MonoBehaviour
             currentMoves--;
             UpdateUI();
             
-            // 첫 매칭이 성공했으므로 콤보 카운트를 1로 시작합니다.
             comboCount = 1;
             ClearMatches(matchedBlocks);
         }
@@ -238,8 +236,8 @@ public class BoardGridManager : MonoBehaviour
         currentScore += matchedBlocks.Count * 100;
         UpdateUI();
 
-        // 효과음 재생 함수 호출
-        PlayMatchSound();
+        // 파괴되기 전, 매칭된 블록 데이터를 기반으로 소리 재생
+        PlayMatchSounds(matchedBlocks);
 
         foreach (BlockData block in matchedBlocks)
         {
@@ -249,17 +247,34 @@ public class BoardGridManager : MonoBehaviour
         StartCoroutine(ProcessBoardRoutine());
     }
 
-    // 효과음을 재생하는 핵심 함수
-    private void PlayMatchSound()
+    // 고도화된 블록별 사운드 재생 함수
+    private void PlayMatchSounds(HashSet<BlockData> matchedBlocks)
     {
-        if (audioSource != null && matchSound != null)
+        if (audioSource == null || blockMatchSounds == null || blockMatchSounds.Length == 0) return;
+
+        // 이번 연쇄에서 터진 블록들의 고유한 종류(Type)만 추출 (중복 제거)
+        HashSet<BlockType> uniqueTypesInMatch = new HashSet<BlockType>();
+        foreach (BlockData block in matchedBlocks)
         {
-            // 콤보 횟수에 따라 음정(Pitch)을 계산합니다. (기본값 1.0부터 시작하여 콤보당 증가)
-            // 연쇄적으로 터질 때 도-레-미-파 처럼 소리가 높아져 리듬감과 타격감이 생깁니다.
-            audioSource.pitch = 1.0f + (comboCount - 1) * pitchIncrease;
+            if (block.type != BlockType.Empty)
+            {
+                uniqueTypesInMatch.Add(block.type);
+            }
+        }
+
+        // 찾아낸 고유 타입별로 해당하는 사운드를 동시에 재생
+        foreach (BlockType type in uniqueTypesInMatch)
+        {
+            int index = (int)type - 1; // Enum 값은 1부터 시작하므로 배열 인덱스는 -1
             
-            // 효과음을 1회 자르고 재생합니다.
-            audioSource.PlayOneShot(matchSound);
+            if (index >= 0 && index < blockMatchSounds.Length && blockMatchSounds[index] != null)
+            {
+                // 현재 콤보 상태에 따른 피치 변경 적용
+                audioSource.pitch = 1.0f + (comboCount - 1) * pitchIncrease;
+                
+                // PlayOneShot은 여러 소리가 동시에 겹쳐서 나도 깨지지 않고 출력해줍니다.
+                audioSource.PlayOneShot(blockMatchSounds[index]);
+            }
         }
     }
 
@@ -271,17 +286,13 @@ public class BoardGridManager : MonoBehaviour
         HashSet<BlockData> newMatches = FindAllMatches();
         if (newMatches.Count > 0)
         {
-            // 연쇄 폭발이 일어났으므로 콤보 카운트 증가
             comboCount++;
-            
             yield return new WaitForSeconds(0.3f); 
             ClearMatches(newMatches); 
         }
         else
         {
-            // 더 이상 터질 게 없다면 다음 턴을 위해 콤보 카운트 리셋
             comboCount = 1;
-            
             CheckGameOver();
             if (!isGameOver) isSwapping = false; 
         }
