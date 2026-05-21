@@ -1,8 +1,8 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using TMPro; // UI Á¦¾î¸¦ À§ÇØ Ãß°¡
-using UnityEngine.SceneManagement; // ¾À Àç½ÃÀÛÀ» À§ÇØ Ãß°¡
+using TMPro;
+using UnityEngine.SceneManagement;
 
 public class BoardGridManager : MonoBehaviour
 {
@@ -30,19 +30,26 @@ public class BoardGridManager : MonoBehaviour
     [SerializeField] private Sprite[] blockSprites;
 
     [Header("--- Game Flow & UI ---")]
-    [SerializeField] private int maxMoves = 20;       // ÃÖ´ë ÀÌµ¿ °¡´É È½¼ö
+    [SerializeField] private int maxMoves = 20;       
     [SerializeField] private TextMeshProUGUI scoreText;
     [SerializeField] private TextMeshProUGUI movesText;
     [SerializeField] private GameObject gameOverPanel;
 
-    private BlockData[,] grid;
-    private BlockData firstSelectedBlock;
-    private bool isSwapping = false;
+    [Header("--- Audio Settings (íƒ€ê²©ê°) ---")]
+    [SerializeField] private AudioSource audioSource; // 2ë²ˆì—ì„œ ì¶”ê°€í•  ì˜¤ë””ì˜¤ ì†ŒìŠ¤ ì»´í¬ë„ŒíŠ¸
+    [SerializeField] private AudioClip matchSound;    // ì™¸ë¶€ì—ì„œ ë°”ê¿€ ìˆ˜ ìˆëŠ” íš¨ê³¼ìŒ íŒŒì¼
+    [SerializeField] private float pitchIncrease = 0.1f; // ì½¤ë³´ë§ˆë‹¤ ì¦ê°€í•  ìŒì • ë†’ì´
 
-    // °ÔÀÓ »óÅÂ º¯¼ö
+    private BlockData[,] grid;
+    private BlockData firstSelectedBlock; 
+    private bool isSwapping = false;
+    
     private int currentMoves;
     private int currentScore = 0;
     private bool isGameOver = false;
+
+    // í˜„ì¬ ì—°ì‡„ í­ë°œ íšŸìˆ˜ë¥¼ ê¸°ì–µí•˜ëŠ” ë³€ìˆ˜
+    private int comboCount = 1;
 
     private void Awake()
     {
@@ -52,13 +59,13 @@ public class BoardGridManager : MonoBehaviour
         SpawnBoardObjects();
     }
 
-    // 7´Ü°è Ãß°¡: °ÔÀÓ ÃÊ±â »óÅÂ ¼¼ÆÃ
     private void InitializeGame()
     {
         currentMoves = maxMoves;
         currentScore = 0;
         isGameOver = false;
-
+        comboCount = 1;
+        
         if (gameOverPanel != null) gameOverPanel.SetActive(false);
         UpdateUI();
     }
@@ -116,7 +123,6 @@ public class BoardGridManager : MonoBehaviour
 
     public void SelectBlock(int x, int y)
     {
-        // °ÔÀÓ ¿À¹ö »óÅÂÀÌ°Å³ª ºí·Ï ÀÌµ¿ ÁßÀÌ¸é ÀÔ·Â Â÷´Ü
         if (isSwapping || isGameOver) return;
 
         BlockData clickedBlock = grid[x, y];
@@ -152,16 +158,17 @@ public class BoardGridManager : MonoBehaviour
         HashSet<BlockData> matchedBlocks = FindAllMatches();
         if (matchedBlocks.Count > 0)
         {
-            // ¸ÅÄª ¼º°ø ½Ã ÀÌµ¿ È½¼ö 1 Â÷°¨
             currentMoves--;
             UpdateUI();
-
+            
+            // ì²« ë§¤ì¹­ì´ ì„±ê³µí–ˆìœ¼ë¯€ë¡œ ì½¤ë³´ ì¹´ìš´íŠ¸ë¥¼ 1ë¡œ ì‹œì‘í•©ë‹ˆë‹¤.
+            comboCount = 1;
             ClearMatches(matchedBlocks);
         }
         else
         {
             SwapLogicalData(a, b);
-
+            
             moveA = StartCoroutine(AnimateMove(a.gameObject.transform, posA, 0.2f));
             moveB = StartCoroutine(AnimateMove(b.gameObject.transform, posB, 0.2f));
             yield return moveA;
@@ -178,7 +185,7 @@ public class BoardGridManager : MonoBehaviour
         float elapsed = 0f;
         while (elapsed < duration)
         {
-            if (objTransform == null) yield break;
+            if (objTransform == null) yield break; 
             elapsed += Time.deltaTime;
             objTransform.position = Vector3.Lerp(startPos, targetPos, elapsed / duration);
             yield return null;
@@ -228,9 +235,11 @@ public class BoardGridManager : MonoBehaviour
 
     private void ClearMatches(HashSet<BlockData> matchedBlocks)
     {
-        // ÆÄ±«µÇ´Â ºí·Ï 1°³´ç 100Á¡ Ãß°¡
         currentScore += matchedBlocks.Count * 100;
         UpdateUI();
+
+        // íš¨ê³¼ìŒ ì¬ìƒ í•¨ìˆ˜ í˜¸ì¶œ
+        PlayMatchSound();
 
         foreach (BlockData block in matchedBlocks)
         {
@@ -238,6 +247,20 @@ public class BoardGridManager : MonoBehaviour
             block.type = BlockType.Empty;
         }
         StartCoroutine(ProcessBoardRoutine());
+    }
+
+    // íš¨ê³¼ìŒì„ ì¬ìƒí•˜ëŠ” í•µì‹¬ í•¨ìˆ˜
+    private void PlayMatchSound()
+    {
+        if (audioSource != null && matchSound != null)
+        {
+            // ì½¤ë³´ íšŸìˆ˜ì— ë”°ë¼ ìŒì •(Pitch)ì„ ê³„ì‚°í•©ë‹ˆë‹¤. (ê¸°ë³¸ê°’ 1.0ë¶€í„° ì‹œì‘í•˜ì—¬ ì½¤ë³´ë‹¹ ì¦ê°€)
+            // ì—°ì‡„ì ìœ¼ë¡œ í„°ì§ˆ ë•Œ ë„-ë ˆ-ë¯¸-íŒŒ ì²˜ëŸ¼ ì†Œë¦¬ê°€ ë†’ì•„ì ¸ ë¦¬ë“¬ê°ê³¼ íƒ€ê²©ê°ì´ ìƒê¹ë‹ˆë‹¤.
+            audioSource.pitch = 1.0f + (comboCount - 1) * pitchIncrease;
+            
+            // íš¨ê³¼ìŒì„ 1íšŒ ìë¥´ê³  ì¬ìƒí•©ë‹ˆë‹¤.
+            audioSource.PlayOneShot(matchSound);
+        }
     }
 
     private IEnumerator ProcessBoardRoutine()
@@ -248,16 +271,19 @@ public class BoardGridManager : MonoBehaviour
         HashSet<BlockData> newMatches = FindAllMatches();
         if (newMatches.Count > 0)
         {
-            yield return new WaitForSeconds(0.3f);
-            ClearMatches(newMatches);
+            // ì—°ì‡„ í­ë°œì´ ì¼ì–´ë‚¬ìœ¼ë¯€ë¡œ ì½¤ë³´ ì¹´ìš´íŠ¸ ì¦ê°€
+            comboCount++;
+            
+            yield return new WaitForSeconds(0.3f); 
+            ClearMatches(newMatches); 
         }
         else
         {
-            // ¸ğµç ¿¬¼â Æø¹ß°ú º¸µå Á¤¸®°¡ ³¡³­ ÈÄ °ÔÀÓ ¿À¹ö¸¦ Ã¼Å©ÇÕ´Ï´Ù.
+            // ë” ì´ìƒ í„°ì§ˆ ê²Œ ì—†ë‹¤ë©´ ë‹¤ìŒ í„´ì„ ìœ„í•´ ì½¤ë³´ ì¹´ìš´íŠ¸ ë¦¬ì…‹
+            comboCount = 1;
+            
             CheckGameOver();
-
-            if (!isGameOver)
-                isSwapping = false;
+            if (!isGameOver) isSwapping = false; 
         }
     }
 
@@ -267,7 +293,7 @@ public class BoardGridManager : MonoBehaviour
         {
             isGameOver = true;
             if (gameOverPanel != null) gameOverPanel.SetActive(true);
-            Debug.Log($"°ÔÀÓ Á¾·á! ÃÖÁ¾ Á¡¼ö: {currentScore}");
+            Debug.Log($"ê²Œì„ ì¢…ë£Œ! ìµœì¢… ì ìˆ˜: {currentScore}");
         }
     }
 
@@ -287,13 +313,13 @@ public class BoardGridManager : MonoBehaviour
                             BlockData dropBlock = grid[x, ny];
                             grid[x, y] = dropBlock;
                             grid[x, ny] = new BlockData(x, ny, BlockType.Empty);
-
+                            
                             dropBlock.x = x; dropBlock.y = y;
                             dropBlock.gameObject.GetComponent<BlockItem>().UpdateCoordinates(x, y);
 
                             StartCoroutine(AnimateMove(dropBlock.gameObject.transform, GetWorldPosition(x, y), 0.2f));
                             isAnyBlockDropped = true;
-                            break;
+                            break; 
                         }
                     }
                 }
@@ -315,14 +341,14 @@ public class BoardGridManager : MonoBehaviour
                     grid[x, y].type = randomType;
 
                     Vector3 dropTargetPos = GetWorldPosition(x, y);
-                    Vector3 spawnPos = dropTargetPos + new Vector3(0, height * cellSize, 0);
+                    Vector3 spawnPos = dropTargetPos + new Vector3(0, height * cellSize, 0); 
 
                     GameObject newBlock = Instantiate(blockPrefab, spawnPos, Quaternion.identity, this.transform);
                     newBlock.name = $"Block_ [{x}, {y}]";
 
                     BlockItem blockItem = newBlock.GetComponent<BlockItem>();
                     blockItem.Setup(randomType, blockSprites[(int)randomType - 1], x, y);
-
+                    
                     grid[x, y].gameObject = newBlock;
 
                     StartCoroutine(AnimateMove(newBlock.transform, dropTargetPos, 0.25f));
@@ -333,10 +359,8 @@ public class BoardGridManager : MonoBehaviour
         if (isAnyBlockRefilled) yield return new WaitForSeconds(0.25f);
     }
 
-    // ¹öÆ° ÀÌº¥Æ® ¿¬°á¿ë ÇÔ¼ö: °ÔÀÓ Àç½ÃÀÛ
     public void RestartGame()
     {
-        // ÇöÀç ¿­·ÁÀÖ´Â ¾ÀÀ» ´Ù½Ã ·ÎµåÇÕ´Ï´Ù.
         SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
     }
 }
