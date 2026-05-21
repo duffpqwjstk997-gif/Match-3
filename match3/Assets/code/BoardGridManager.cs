@@ -8,7 +8,7 @@ public class BoardGridManager : MonoBehaviour
 {
     public static BoardGridManager Instance;
 
-    public enum BlockType { Empty = 0, Music, Phone, KakaoTalk, Book, Podcast, AppStore, Camera, Photos }
+    public enum BlockType { Empty = 0, Music, Phone, KakaoTalk, Book, Podcast, AppStore, Camera, Photos, CrossItem }
 
     [System.Serializable]
     public class BlockData
@@ -27,7 +27,7 @@ public class BoardGridManager : MonoBehaviour
 
     [Header("--- Visual Elements ---")]
     [SerializeField] private GameObject blockPrefab;
-    [SerializeField] private Sprite[] blockSprites;
+    [SerializeField] private Sprite[] blockSprites; 
 
     [Header("--- Game Flow & UI ---")]
     [SerializeField] private int maxMoves = 20;       
@@ -35,9 +35,8 @@ public class BoardGridManager : MonoBehaviour
     [SerializeField] private TextMeshProUGUI movesText;
     [SerializeField] private GameObject gameOverPanel;
 
-    [Header("--- Audio Settings (블록별 타격감) ---")]
+    [Header("--- Audio Settings ---")]
     [SerializeField] private AudioSource audioSource;
-    // 기존 단일 Clip에서 각 블록 종류별 사운드를 담는 배열로 변경
     [SerializeField] private AudioClip[] blockMatchSounds; 
     [SerializeField] private float pitchIncrease = 0.1f; 
 
@@ -49,6 +48,8 @@ public class BoardGridManager : MonoBehaviour
     private int currentScore = 0;
     private bool isGameOver = false;
     private int comboCount = 1;
+
+    private List<Vector2Int> itemSpawnPositions = new List<Vector2Int>();
 
     private void Awake()
     {
@@ -64,6 +65,7 @@ public class BoardGridManager : MonoBehaviour
         currentScore = 0;
         isGameOver = false;
         comboCount = 1;
+        itemSpawnPositions.Clear();
         
         if (gameOverPanel != null) gameOverPanel.SetActive(false);
         UpdateUI();
@@ -83,7 +85,7 @@ public class BoardGridManager : MonoBehaviour
             for (int y = 0; y < height; y++)
             {
                 List<BlockType> possibleTypes = new List<BlockType>();
-                for (int i = 1; i <= System.Enum.GetValues(typeof(BlockType)).Length - 1; i++) { possibleTypes.Add((BlockType)i); }
+                for (int i = 1; i <= 8; i++) { possibleTypes.Add((BlockType)i); }
 
                 if (x >= 2 && grid[x - 1, y].type == grid[x - 2, y].type) possibleTypes.Remove(grid[x - 1, y].type);
                 if (y >= 2 && grid[x, y - 1].type == grid[x, y - 2].type) possibleTypes.Remove(grid[x, y - 1].type);
@@ -154,6 +156,16 @@ public class BoardGridManager : MonoBehaviour
 
         SwapLogicalData(a, b);
 
+        if (a.type == BlockType.CrossItem || b.type == BlockType.CrossItem)
+        {
+            currentMoves--;
+            UpdateUI();
+            
+            BlockData itemBlock = (a.type == BlockType.CrossItem) ? a : b;
+            TriggerCrossClear(itemBlock.x, itemBlock.y);
+            yield break; 
+        }
+
         HashSet<BlockData> matchedBlocks = FindAllMatches();
         if (matchedBlocks.Count > 0)
         {
@@ -201,15 +213,55 @@ public class BoardGridManager : MonoBehaviour
         b.gameObject.GetComponent<BlockItem>().UpdateCoordinates(b.x, b.y);
     }
 
+    // ★수정됨★: 5개 매치에서 4개 매치로 기준이 낮아졌습니다.
     private HashSet<BlockData> FindAllMatches()
     {
         HashSet<BlockData> matches = new HashSet<BlockData>();
+        itemSpawnPositions.Clear();
+
+        // 1. 가로 4개 매치 우선 탐색 (x 범위가 width - 3으로 변경됨)
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width - 3; x++)
+            {
+                BlockType type = grid[x, y].type;
+                if (type == BlockType.Empty || type == BlockType.CrossItem) continue;
+
+                // 4개가 연속으로 같은지 검사
+                if (grid[x+1, y].type == type && grid[x+2, y].type == type && grid[x+3, y].type == type)
+                {
+                    matches.Add(grid[x, y]); matches.Add(grid[x+1, y]); matches.Add(grid[x+2, y]); matches.Add(grid[x+3, y]);
+                    // 4개 중 2번째([x+1, y]) 좌표를 아이템 탄생 위치로 지정
+                    itemSpawnPositions.Add(new Vector2Int(x + 1, y)); 
+                }
+            }
+        }
+
+        // 2. 세로 4개 매치 우선 탐색 (y 범위가 height - 3으로 변경됨)
+        for (int x = 0; x < width; x++)
+        {
+            for (int y = 0; y < height - 3; y++)
+            {
+                BlockType type = grid[x, y].type;
+                if (type == BlockType.Empty || type == BlockType.CrossItem) continue;
+
+                // 4개가 연속으로 같은지 검사
+                if (grid[x, y+1].type == type && grid[x, y+2].type == type && grid[x, y+3].type == type)
+                {
+                    matches.Add(grid[x, y]); matches.Add(grid[x, y+1]); matches.Add(grid[x, y+2]); matches.Add(grid[x, y+3]);
+                    // 4개 중 2번째([x, y+1]) 좌표를 아이템 탄생 위치로 지정
+                    itemSpawnPositions.Add(new Vector2Int(x, y + 1));
+                }
+            }
+        }
+
+        // 3. 기존의 일반 3개 매치 탐색
         for (int y = 0; y < height; y++)
         {
             for (int x = 0; x < width - 2; x++)
             {
                 BlockData current = grid[x, y];
-                if (current.type == BlockType.Empty) continue;
+                if (current.type == BlockType.Empty || current.type == BlockType.CrossItem) continue;
                 if (grid[x + 1, y].type == current.type && grid[x + 2, y].type == current.type)
                 {
                     matches.Add(current); matches.Add(grid[x + 1, y]); matches.Add(grid[x + 2, y]);
@@ -221,7 +273,7 @@ public class BoardGridManager : MonoBehaviour
             for (int y = 0; y < height - 2; y++)
             {
                 BlockData current = grid[x, y];
-                if (current.type == BlockType.Empty) continue;
+                if (current.type == BlockType.Empty || current.type == BlockType.CrossItem) continue;
                 if (grid[x, y + 1].type == current.type && grid[x, y + 2].type == current.type)
                 {
                     matches.Add(current); matches.Add(grid[x, y + 1]); matches.Add(grid[x, y + 2]);
@@ -236,43 +288,73 @@ public class BoardGridManager : MonoBehaviour
         currentScore += matchedBlocks.Count * 100;
         UpdateUI();
 
-        // 파괴되기 전, 매칭된 블록 데이터를 기반으로 소리 재생
         PlayMatchSounds(matchedBlocks);
+
+        List<Vector2Int> spawnTargets = new List<Vector2Int>(itemSpawnPositions);
+        itemSpawnPositions.Clear(); 
 
         foreach (BlockData block in matchedBlocks)
         {
             if (block.gameObject != null) Destroy(block.gameObject);
-            block.type = BlockType.Empty;
+
+            Vector2Int currentPos = new Vector2Int(block.x, block.y);
+            
+            if (spawnTargets.Contains(currentPos))
+            {
+                block.type = BlockType.CrossItem;
+                
+                GameObject newItem = Instantiate(blockPrefab, GetWorldPosition(block.x, block.y), Quaternion.identity, this.transform);
+                newItem.name = $"Item_Cross_[{block.x}, {block.y}]";
+                
+                BlockItem blockItem = newItem.GetComponent<BlockItem>();
+                blockItem.Setup(BlockType.CrossItem, blockSprites[(int)BlockType.CrossItem - 1], block.x, block.y);
+                
+                block.gameObject = newItem;
+            }
+            else
+            {
+                block.type = BlockType.Empty;
+            }
         }
         StartCoroutine(ProcessBoardRoutine());
     }
 
-    // 고도화된 블록별 사운드 재생 함수
+    private void TriggerCrossClear(int targetX, int targetY)
+    {
+        HashSet<BlockData> blocksToClear = new HashSet<BlockData>();
+
+        for (int x = 0; x < width; x++)
+        {
+            if (grid[x, targetY].type != BlockType.Empty)
+                blocksToClear.Add(grid[x, targetY]);
+        }
+
+        for (int y = 0; y < height; y++)
+        {
+            if (grid[targetX, y].type != BlockType.Empty)
+                blocksToClear.Add(grid[targetX, y]);
+        }
+        
+        comboCount = 2; 
+        ClearMatches(blocksToClear);
+    }
+
     private void PlayMatchSounds(HashSet<BlockData> matchedBlocks)
     {
         if (audioSource == null || blockMatchSounds == null || blockMatchSounds.Length == 0) return;
 
-        // 이번 연쇄에서 터진 블록들의 고유한 종류(Type)만 추출 (중복 제거)
         HashSet<BlockType> uniqueTypesInMatch = new HashSet<BlockType>();
         foreach (BlockData block in matchedBlocks)
         {
-            if (block.type != BlockType.Empty)
-            {
-                uniqueTypesInMatch.Add(block.type);
-            }
+            if (block.type != BlockType.Empty) uniqueTypesInMatch.Add(block.type);
         }
 
-        // 찾아낸 고유 타입별로 해당하는 사운드를 동시에 재생
         foreach (BlockType type in uniqueTypesInMatch)
         {
-            int index = (int)type - 1; // Enum 값은 1부터 시작하므로 배열 인덱스는 -1
-            
+            int index = (int)type - 1;
             if (index >= 0 && index < blockMatchSounds.Length && blockMatchSounds[index] != null)
             {
-                // 현재 콤보 상태에 따른 피치 변경 적용
                 audioSource.pitch = 1.0f + (comboCount - 1) * pitchIncrease;
-                
-                // PlayOneShot은 여러 소리가 동시에 겹쳐서 나도 깨지지 않고 출력해줍니다.
                 audioSource.PlayOneShot(blockMatchSounds[index]);
             }
         }
@@ -304,7 +386,6 @@ public class BoardGridManager : MonoBehaviour
         {
             isGameOver = true;
             if (gameOverPanel != null) gameOverPanel.SetActive(true);
-            Debug.Log($"게임 종료! 최종 점수: {currentScore}");
         }
     }
 
@@ -348,7 +429,7 @@ public class BoardGridManager : MonoBehaviour
             {
                 if (grid[x, y].type == BlockType.Empty)
                 {
-                    BlockType randomType = (BlockType)Random.Range(1, System.Enum.GetValues(typeof(BlockType)).Length);
+                    BlockType randomType = (BlockType)Random.Range(1, 9); 
                     grid[x, y].type = randomType;
 
                     Vector3 dropTargetPos = GetWorldPosition(x, y);

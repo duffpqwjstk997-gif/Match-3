@@ -1671,6 +1671,7 @@ MonoBehaviour:
   - {fileID: 7706266320441646002, guid: ce05d20b788a50546b5b5dac8a926e7f, type: 3}
   - {fileID: 5361671929495183841, guid: ce05d20b788a50546b5b5dac8a926e7f, type: 3}
   - {fileID: -7687094487789400651, guid: ce05d20b788a50546b5b5dac8a926e7f, type: 3}
+  - {fileID: -2290304184778508886, guid: 70069047141fd1940b2f980594661043, type: 3}
   maxMoves: 20
   scoreText: {fileID: 1084557245}
   movesText: {fileID: 162436403}
@@ -1685,6 +1686,7 @@ MonoBehaviour:
   - {fileID: 8300000, guid: 1e6905878d48f5e45a90995c922bad9f, type: 3}
   - {fileID: 8300000, guid: 051b99e1b29ae4e44bd1c5a00f62edae, type: 3}
   - {fileID: 8300000, guid: 9799a77245f76b54ea7b1362a8cc58f0, type: 3}
+  - {fileID: 8300000, guid: 52320e590bf774734a288886eba557ba, type: 3}
   pitchIncrease: 0.1
 --- !u!4 &1509045779
 Transform:
